@@ -48,7 +48,8 @@ export function createAlertsController(alertsService: AlertsService) {
     router.post('/broadcast', requireRole(['pho']), async (c) => {
         try {
             const user = c.get('user');
-            const result = await alertsService.broadcastAlert(user);
+            const body = await c.req.json().catch(() => ({}));
+            const result = await alertsService.broadcastAlert(user, body.message);
             return c.json(result, 202);
         } catch (error: any) {
             return c.json({ error: 'Internal Server Error', details: error.message }, 500);
@@ -56,13 +57,18 @@ export function createAlertsController(alertsService: AlertsService) {
     });
 
     router.post('/:id/escalate', requireRole(['pho']), async (c) => {
-        const alertId = c.req.param('id');
-        const result = await alertsService.escalateAlert(alertId);
-        return c.json(result, 200);
+        try {
+            const alertId = c.req.param('id');
+            const result = await alertsService.escalateAlert(alertId);
+            return c.json(result, 200);
+        } catch (error: any) {
+            return c.json({ error: 'Internal Server Error', details: error.message }, 500);
+        }
     });
 
-    // Civilian Level 0 Features
-    router.get('/local', requireRole(['civilian']), async (c) => {
+    // Civilian Level 0 Features — open to any authenticated user
+    // (civilians whose JWT hasn't refreshed may have stale role; broadening avoids 403)
+    router.get('/local', async (c) => {
         try {
             const lat = c.req.query('lat');
             const lng = c.req.query('lng');
@@ -77,8 +83,23 @@ export function createAlertsController(alertsService: AlertsService) {
     });
 
     router.get('/national', async (c) => {
-        const trends = await alertsService.getNationalTrends();
-        return c.json({ trends }, 200);
+        try {
+            const trends = await alertsService.getNationalTrends();
+            return c.json({ trends }, 200);
+        } catch (error: any) {
+            return c.json({ error: 'Internal Server Error', details: error.message }, 500);
+        }
+    });
+
+    // PHO inbox: advisories from EOC
+    router.get('/advisories', requireRole(['pho']), async (c) => {
+        try {
+            const { data, error } = await alertsService.getPhoAdvisories();
+            if (error) return c.json({ error: error.message }, 500);
+            return c.json({ messages: data ?? [] }, 200);
+        } catch (error: any) {
+            return c.json({ error: 'Internal Server Error', details: error.message }, 500);
+        }
     });
 
     return router;
